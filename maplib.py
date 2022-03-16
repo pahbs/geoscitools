@@ -262,7 +262,7 @@ def MAP_LAYER_FOLIUM(LAYER=None, fig_w=1000, fig_h=400, lat_start=60, lon_start=
     Map_Figure.add_child(foliumMap)
     
     if LAYER is not None:
-        GeoJson(LAYER, name='footprints', style_function=lambda x:{'fillColor': 'gray', 'color': 'red'}).add_to(foliumMap)
+        GeoJson(LAYER, name='footprints', style_function=lambda x:{'fillColor': 'gray', 'color': 'red', 'weight' : 0.75, 'opacity': 1, 'fillOpacity': 0.5}).add_to(foliumMap)
         
     basemaps['Imagery'].add_to(foliumMap)
     basemaps['basemap_gray'].add_to(foliumMap)
@@ -298,13 +298,15 @@ def MAP_FOLIUM(ADD_LAYER=False, LAYER_FN=None, basemaps=basemaps, fig_w=1000, fi
     if ADD_LAYER:
         lyr = gpd.read_file(LAYER_FN)
         lyrs = gpd.GeoDataFrame( pd.concat( [lyr], ignore_index=True) )
-        lyr_style = {'fillColor': 'gray', 'color': 'red'}
+        lyr_style = {'fillColor': 'gray', 'color': 'red', 'weight' : 0.75, 'opacity': 1, 'fillOpacity': 0.5}
         GeoJson(lyrs, name=LAYER_NAME, style_function=lambda x:lyr_style).add_to(foliumMap)
     
     LayerControl().add_to(foliumMap)
     plugins.Geocoder().add_to(foliumMap)
     plugins.MousePosition().add_to(foliumMap)
     minimap = plugins.MiniMap()
+    plugins.Fullscreen().add_to(foliumMap)
+    
     foliumMap.add_child(minimap)
     return foliumMap
     
@@ -338,7 +340,7 @@ def MAP_ATL08_FOLIUM(atl08_gdf, MAP_COL='h_can', DO_NIGHT=True, NIGHT_FLAG_NAME=
     if ADD_LAYER:
         lyr = gpd.read_file(LAYER_FN)
         lyrs = gpd.GeoDataFrame( pd.concat( [lyr], ignore_index=True) )
-        lyr_style = {'fillColor': 'gray', 'color': 'gray'}
+        lyr_style = {'fillColor': 'gray', 'color': 'gray', 'weight' : 0.75, 'opacity': 1, 'fillOpacity': 0.5}
         GeoJson(lyrs, name="HRSI CHM footprints", style_function=lambda x:lyr_style).add_to(foliumMap)
 
     foliumMap = ADD_ATL08_OBS_TO_MAP(atl08_gdf, MAP_COL=MAP_COL, DO_NIGHT=DO_NIGHT, NIGHT_FLAG_NAME=NIGHT_FLAG_NAME, foliumMap=foliumMap, RADIUS=RADIUS)
