@@ -32,7 +32,13 @@ if False:
 
 import datetime
 
-def MAP_ATL08(ATL08_GDF_SUBSET, SUBSET_NAME, YEAR, DIR_MAP, MAP_COL = 'h_can', YEAR_COL = 'y', proj="+proj=laea +lat_0=60 +lon_0=-100 +x_0=90 +y_0=0 +ellps=GRS80"):
+import folium
+from folium import Map, TileLayer, GeoJson, LayerControl, Icon, Marker, features, Figure, CircleMarker, plugins
+
+import branca.colormap as cm
+import matplotlib.cm
+
+def MAP_ATL08(ATL08_GDF_SUBSET, SUBSET_NAME, YEAR, DIR_MAP, TITLE="Canopy height from ICESat-2", MAP_COL = 'h_can', YEAR_COL = 'y', proj="+proj=laea +lat_0=60 +lon_0=-100 +x_0=90 +y_0=0 +ellps=GRS80"):
     
     # Plot obs from night and day
     # My cmap
@@ -76,7 +82,7 @@ def MAP_ATL08(ATL08_GDF_SUBSET, SUBSET_NAME, YEAR, DIR_MAP, MAP_COL = 'h_can', Y
     if 'all' in YEAR:
         # All years
         YEAR = f'{ATL08_GDF_SUBSET[YEAR_COL].min()} - {ATL08_GDF_SUBSET[YEAR_COL].max()}'
-    ax_map_title = f'Canopy height from ICESat-2: {YEAR}'
+    ax_map_title = f'{TITLE}: {YEAR}'
     cbar_map_title = f'Canopy height [m] (ATL08: {MAP_COL})'
 
     d = datetime.date.today().strftime("%Y%b%d")
@@ -163,72 +169,56 @@ def MAP_ATL08_POLAR(atl08_gdf, YEAR=2021, MAP_COL='h_can'):
 
     plt.show()
     
-    
-def MAP_ATL08_FOLIUM(atl08_gdf, MAP_COL='h_can', DO_NIGHT=True, ADD_LAYER=True, LAYER_FN=None):
-    
-    if LAYER_FN is None:
-        ADD_LAYER=False
-    
-    import folium
-    from folium import Map, TileLayer, GeoJson, LayerControl, Icon, Marker, features, Figure, CircleMarker
+basemaps = {
+       'Google Terrain' : TileLayer(
+        tiles = 'https://mt1.google.com/vt/lyrs=p&x={x}&y={y}&z={z}',
+        attr = 'Google',
+        name = 'Google Terrain',
+        overlay = False,
+        control = True
+       ),
+        'basemap_gray' : TileLayer(
+            tiles="http://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+            opacity=1,
+            name="World gray basemap",
+            attr="ESRI",
+            overlay=False
+        ),
+        'Imagery' : TileLayer(
+            tiles='https://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+            opacity=1,
+            name="World Imagery",
+            attr="ESRI",
+            overlay=False
+        ),
+        'ESRINatGeo' : TileLayer(
+            tiles='https://server.arcgisonline.com/ArcGIS/rest/services/NatGeo_World_Map/MapServer/tile/{z}/{y}/{x}',
+            opacity=1,
+            name='ESRI NatGeo',
+            attr='ESRI',
+            overlay=False
+        )
+}
 
-    import branca.colormap as cm
-    import matplotlib.cm
+def ADD_ATL08_OBS_TO_MAP(atl08_gdf, MAP_COL, DO_NIGHT, NIGHT_FLAG_NAME, foliumMap, RADIUS=10):
     
     pal_height_cmap = cm.LinearColormap(colors = ['black','#636363','#fc8d59','#fee08b','#ffffbf','#d9ef8b','#91cf60','#1a9850'], vmin=0, vmax=25)
-    pal_height_cmap.caption = f'Vegetation height from  ATL08 @ 30 m ({MAP_COL})'
-    
-    # Get a basemap
-    #tiler_basemap_gray = "http://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"
-    #tiler_basemap_image = 'https://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-
-    basemaps = {
-           'Google Terrain' : TileLayer(
-            tiles = 'https://mt1.google.com/vt/lyrs=p&x={x}&y={y}&z={z}',
-            attr = 'Google',
-            name = 'Google Terrain',
-            overlay = False,
-            control = True
-           ),
-            'basemap_gray' : TileLayer(
-                tiles="http://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}",
-                opacity=1,
-                name="World gray basemap",
-                attr="MAAP",
-                overlay=False
-            ),
-            'Imagery' : TileLayer(
-                tiles='https://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                opacity=1,
-                name="Imagery",
-                attr="MAAP",
-                overlay=False
-            )
-    }
-
-    #Map the Layers
-    Map_Figure=Figure(width=1000,height=400)
-    
-    #------------------
-    foliumMap = Map(
-        tiles="Stamen Toner",
-        location=(atl08_gdf.lat.mean(), atl08_gdf.lon.mean()),
-        zoom_start=8
-    )
-    Map_Figure.add_child(foliumMap)
-    
-    basemaps['Imagery'].add_to(foliumMap)
-    basemaps['basemap_gray'].add_to(foliumMap)
+    pal_height_cmap.caption = f'Vegetation height from  ATL08 ({MAP_COL})'
     
     night_flg_label = 'day/night'
     if DO_NIGHT:
-        atl08_gdf = atl08_gdf[atl08_gdf.night_flg == 1]
+        atl08_gdf = atl08_gdf[atl08_gdf[NIGHT_FLAG_NAME]== 1]
         night_flg_label = 'night'
     print(f'Mapping {len(atl08_gdf)} {night_flg_label} ATL08 observations of {MAP_COL}')
-
-    for lat, lon, ht in zip(atl08_gdf.lat, atl08_gdf.lon, atl08_gdf[MAP_COL]):
+    
+    # https://stackoverflow.com/questions/61263787/folium-featuregroup-in-python
+    #feature_group = folium.FeatureGroup('ATL08')
+    
+    atl08_cols_zip_list = [atl08_gdf.lat, atl08_gdf.lon, atl08_gdf[MAP_COL]]
+        
+    for lat, lon, ht in zip(*atl08_cols_zip_list):
         ATL08_obs_night = CircleMarker(location=[lat, lon],
-                                radius = 10,
+                                radius = RADIUS,
                                 weight = 0.75,
                                 tooltip = str(round(ht,2))+" m",
                                 fill=True,
@@ -238,18 +228,157 @@ def MAP_ATL08_FOLIUM(atl08_gdf, MAP_COL='h_can', DO_NIGHT=True, ADD_LAYER=True, 
                                 name = f"ATL08 {night_flg_label} obs"
                    )
         ATL08_obs_night.add_to(foliumMap)
+    foliumMap.add_child(pal_height_cmap)
+    #LayerControl().add_to(foliumMap)
+    return foliumMap
+
+def ADD_ATL03_OBS_TO_MAP(atl03_gdf, foliumMap):
     
+    for lat, lon, phclassname, phcolor, elev in zip(atl03_gdf.lat, atl03_gdf.lon, atl03_gdf['class_name'], atl03_gdf['color'], atl03_gdf['elev']):
+            ATL03_obs = CircleMarker(location=[lat, lon],
+                                    radius = 5,
+                                    weight = 1,
+                                    tooltip = phclassname+": "+str(round(elev,2))+" m",
+                                    fill=True,
+                                    #fill_color=getfill(h_can),
+                                    color = phcolor,
+                                    opacity = 1,
+                                    name = f"ATL03 classified photons"
+                       )
+            ATL03_obs.add_to(foliumMap)
+
+    return foliumMap
+
+def MAP_LAYER_FOLIUM(LAYER=None, fig_w=1000, fig_h=400, lat_start=60, lon_start=-120, zoom_start=8):      
+    
+    #Map the Layers
+    Map_Figure=Figure(width=fig_w,height=fig_h)
+    foliumMap = Map(
+        tiles=None,
+        location=(lat_start, lon_start),
+        zoom_start=zoom_start, 
+        control_scale=True
+    )
+    Map_Figure.add_child(foliumMap)
+    
+    if LAYER is not None:
+        GeoJson(LAYER, name='footprints', style_function=lambda x:{'fillColor': 'gray', 'color': 'red'}).add_to(foliumMap)
+        
+    basemaps['Imagery'].add_to(foliumMap)
+    basemaps['basemap_gray'].add_to(foliumMap)
+    basemaps['ESRINatGeo'].add_to(foliumMap)
+    
+    LayerControl().add_to(foliumMap)
+    plugins.Geocoder().add_to(foliumMap)
+    plugins.MousePosition().add_to(foliumMap)
+    minimap = plugins.MiniMap()
+    foliumMap.add_child(minimap)
+    
+    return foliumMap
+
+def MAP_FOLIUM(ADD_LAYER=False, LAYER_FN=None, basemaps=basemaps, fig_w=1000, fig_h=400, lat_start=5, lon_start=-17, zoom_start=8, LAYER_NAME="HRSI CHM footprints"):
+    #Map the Layers
+    Map_Figure=Figure(width=fig_w,height=fig_h)
+    
+    #------------------
+    foliumMap = Map(
+        #tiles="Stamen Terrain",
+        #tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        #attr = 'ESRI World Imagery',
+        #name = 'ESRI World Imagery',
+        location=(lat_start, lon_start),
+        zoom_start=zoom_start, control_scale=True, tiles=None
+    )
+    Map_Figure.add_child(foliumMap)
+    
+    basemaps['Imagery'].add_to(foliumMap)
+    basemaps['basemap_gray'].add_to(foliumMap)
+    basemaps['ESRINatGeo'].add_to(foliumMap)
+    
+    if ADD_LAYER:
+        lyr = gpd.read_file(LAYER_FN)
+        lyrs = gpd.GeoDataFrame( pd.concat( [lyr], ignore_index=True) )
+        lyr_style = {'fillColor': 'gray', 'color': 'red'}
+        GeoJson(lyrs, name=LAYER_NAME, style_function=lambda x:lyr_style).add_to(foliumMap)
+    
+    LayerControl().add_to(foliumMap)
+    plugins.Geocoder().add_to(foliumMap)
+    plugins.MousePosition().add_to(foliumMap)
+    minimap = plugins.MiniMap()
+    foliumMap.add_child(minimap)
+    return foliumMap
+    
+def MAP_ATL08_FOLIUM(atl08_gdf, MAP_COL='h_can', DO_NIGHT=True, NIGHT_FLAG_NAME='night_flg' , ADD_LAYER=True, LAYER_FN=None, basemaps=basemaps, fig_w=1000, fig_h=400, RADIUS=10):
+    
+    if LAYER_FN is None:
+        ADD_LAYER=False
+    
+    # Get a basemap
+    #tiler_basemap_gray = "http://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"
+    #tiler_basemap_image = 'https://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+
+    #Map the Layers
+    Map_Figure=Figure(width=fig_w,height=fig_h)
+    
+    #------------------
+    foliumMap = Map(
+        #tiles="Stamen Toner",
+        #tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        #attr = 'ESRI World Imagery',
+        #name = 'ESRI World Imagery',
+        location=(atl08_gdf.lat.mean(), atl08_gdf.lon.mean()),
+        zoom_start=8, control_scale=True, tiles=None
+    )
+    Map_Figure.add_child(foliumMap)
+    
+    basemaps['Imagery'].add_to(foliumMap)
+    basemaps['basemap_gray'].add_to(foliumMap)
+    basemaps['ESRINatGeo'].add_to(foliumMap)
+     
     if ADD_LAYER:
         lyr = gpd.read_file(LAYER_FN)
         lyrs = gpd.GeoDataFrame( pd.concat( [lyr], ignore_index=True) )
         lyr_style = {'fillColor': 'gray', 'color': 'gray'}
         GeoJson(lyrs, name="HRSI CHM footprints", style_function=lambda x:lyr_style).add_to(foliumMap)
+
+    foliumMap = ADD_ATL08_OBS_TO_MAP(atl08_gdf, MAP_COL=MAP_COL, DO_NIGHT=DO_NIGHT, NIGHT_FLAG_NAME=NIGHT_FLAG_NAME, foliumMap=foliumMap, RADIUS=RADIUS)
+    #foliumMap.add_child(LayerControl()) #LayerControl().add_to(foliumMap)
     
     LayerControl().add_to(foliumMap)
-    foliumMap.add_child(pal_height_cmap)
-    
     ## Add fullscreen button
-    #plugins.Fullscreen().add_to(foliumMap)
+    plugins.Fullscreen().add_to(foliumMap)
+    ##plugins.Geocoder().add_to(foliumMap)
+    plugins.MousePosition().add_to(foliumMap)
+    minimap = plugins.MiniMap()
+    foliumMap.add_child(minimap)
+    
+    return foliumMap
+
+
+
+def MAP_ATL03_FOLIUM(atl03_gdf, basemaps=basemaps, fig_w=1000, fig_h=400, zoom_start=10):
+
+   
+    #Map the Layers
+    Map_Figure=Figure(width=fig_w,height=fig_h)
+
+    #------------------
+    foliumMap = Map(
+        #tiles="Stamen Terrain",
+        location=(atl03_gdf.lat.mean(), atl03_gdf.lon.mean()),
+        zoom_start=zoom_start, control_scale=True, tiles=None
+    )
+    Map_Figure.add_child(foliumMap)
+    
+    foliumMap = ADD_ATL03_OBS_TO_MAP(atl03_gdf, foliumMap)
+
+    basemaps['Imagery'].add_to(foliumMap)
+    basemaps['basemap_gray'].add_to(foliumMap)
+    LayerControl().add_to(foliumMap)
+    plugins.Geocoder().add_to(foliumMap)
+    plugins.MousePosition().add_to(foliumMap)
+    minimap = plugins.MiniMap()
+    foliumMap.add_child(minimap)
     
     return foliumMap
 

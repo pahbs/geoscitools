@@ -1,6 +1,7 @@
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+import rasterio
 
 from scipy.spatial import cKDTree
 from shapely.geometry import Point
@@ -44,3 +45,31 @@ def query_db_catid_NEW(catID, prod_code='M1BS', out_dir='/att/nobackup/pmontesa'
         selected=cur.fetchall()
 
     return selected
+
+def reproject_raster(in_path, out_path, to_crs = CRS.from_string('EPSG:4326')):
+
+    """https://stackoverflow.com/questions/60288953/how-to-change-the-crs-of-a-raster-with-rasterio
+    """
+    # reproject raster to project crs
+    with rasterio.open(in_path) as src:
+        src_crs = src.crs
+        transform, width, height = calculate_default_transform(src_crs, to_crs, src.width, src.height, *src.bounds)
+        kwargs = src.meta.copy()
+
+        kwargs.update({
+            'crs': to_crs,
+            'transform': transform,
+            'width': width,
+            'height': height})
+
+        with rasterio.open(out_path, 'w', **kwargs) as dst:
+            for i in range(1, src.count + 1):
+                reproject(
+                    source=rasterio.band(src, i),
+                    destination=rasterio.band(dst, i),
+                    src_transform=src.transform,
+                    src_crs=src.crs,
+                    dst_transform=transform,
+                    dst_crs=to_crs,
+                    resampling=Resampling.nearest)
+    return(out_path)
