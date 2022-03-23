@@ -36,7 +36,7 @@ def ckdnearest(gdA, gdB):
 def query_db_catid_NEW(catID, prod_code='M1BS', out_dir='/att/nobackup/pmontesa', db_table='nga_footprint_master_V2'):
     '''Query and select scenes from latest database
     '''
-    with psycopg2.connect(database="arcgis", user="pmontesa", password="UzkEnLNgNXWnDZGeCQOH", host="arcdb04", port="5432") as dbConnect:
+    with psycopg2.connect(database="arcgis", user="pmontesa", password="baaaad", host="arcdb04", port="5432") as dbConnect:
 
         cur = dbConnect.cursor() # setup the cursor
         selquery =  "SELECT S_FILEPATH, SENSOR, CATALOG_ID, ACQ_TIME FROM %s WHERE CATALOG_ID = '%s' AND PROD_CODE = '%s'" %(db_table, catID, prod_code)
