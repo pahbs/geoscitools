@@ -56,7 +56,7 @@ def get_rio_aws_session_from_creds(credentials_fn):
     
     return rio_aws_session
 
-def get_s3_fs_from_creds():
+def get_s3_fs_from_creds(credentials_fn):
     
     profile_name, aws_access_key_id, aws_secret_access_key = parse_aws_creds(credentials_fn)
 
