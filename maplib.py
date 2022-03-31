@@ -282,6 +282,7 @@ def MAP_LAYER_FOLIUM(LAYER=None, LAYER_COL_NAME=None, fig_w=1000, fig_h=400, lat
     plugins.Geocoder().add_to(foliumMap)
     plugins.MousePosition().add_to(foliumMap)
     minimap = plugins.MiniMap()
+    plugins.Fullscreen().add_to(foliumMap)
     foliumMap.add_child(minimap)
     
     return foliumMap
@@ -316,8 +317,8 @@ def MAP_FOLIUM(ADD_LAYER=False, LAYER_FN=None, basemaps=basemaps, fig_w=1000, fi
     plugins.MousePosition().add_to(foliumMap)
     minimap = plugins.MiniMap()
     plugins.Fullscreen().add_to(foliumMap)
-    
     foliumMap.add_child(minimap)
+    
     return foliumMap
     
 def MAP_ATL08_FOLIUM(atl08_gdf, MAP_COL='h_can', DO_NIGHT=True, NIGHT_FLAG_NAME='night_flg' , ADD_LAYER=True, LAYER_FN=None, basemaps=basemaps, fig_w=1000, fig_h=400, RADIUS=10):

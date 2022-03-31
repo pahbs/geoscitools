@@ -186,7 +186,7 @@ def r_getgeom(r_fn, TO_GCS = True, scale_factor=100, out_res=250):
                     #geom_list.append(geom)
 
                 #print(val)
-            print(geom)
+            #print(geom)
             
         return geom, name, os.path.basename(r_fn), data_crs
     
