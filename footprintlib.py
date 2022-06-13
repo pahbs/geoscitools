@@ -242,7 +242,7 @@ def get_geom_from_bounds(rio_dataset, footprint_name=None):
     geom = list(results)
     return(geom)
 
-def raster_footprint(r_fn, DO_DATAMASK=True, GET_ONLY_DATASETMASK=True, R_READ_MODE='r+'):
+def raster_footprint(r_fn, DO_DATAMASK=True, GET_ONLY_DATASETMASK=True, R_READ_MODE='r+', MANY_CRS=False):
     
     with rasterio.open(r_fn, mode=R_READ_MODE) as dataset:
         
@@ -258,7 +258,6 @@ def raster_footprint(r_fn, DO_DATAMASK=True, GET_ONLY_DATASETMASK=True, R_READ_M
             job_string = 'raster image bounds (low memory)'
             geom = get_geom_from_bounds(dataset)
         
-        
         footprints_gdf  = gpd.GeoDataFrame.from_features(geom, crs=dataset.crs)
         #print(footprints_gdf.crs.axis_info[0].unit_name)
         #print(dataset.crs)
@@ -272,6 +271,10 @@ def raster_footprint(r_fn, DO_DATAMASK=True, GET_ONLY_DATASETMASK=True, R_READ_M
             # Get area
             footprints_gdf["area_km2"] = footprints_gdf['geometry'].area/1e6
             footprints_gdf["area_ha"] = footprints_gdf['geometry'].area/1e4
+
+        if MANY_CRS:
+            #print('There are multiple CRSs in this set, so reprojecting everything to 4326...')
+            footprints_gdf = footprints_gdf.to_crs(4326)
                     
         return footprints_gdf
     

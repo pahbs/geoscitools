@@ -5,6 +5,7 @@ import pandas as pd
 
 import glob
 import os
+import time
 
 def atl08_io(ATL08_CSV_OUTPUT_DIR, YEAR_SEARCH, DO_PICKLE=True):
     

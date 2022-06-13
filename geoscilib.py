@@ -1,7 +1,14 @@
+import os
 import geopandas as gpd
 import numpy as np
 import pandas as pd
 import rasterio
+from rasterio.crs import CRS
+
+from rasterio.coords import BoundingBox
+from rasterio.coords import disjoint_bounds
+
+import multiprocessing as mp
 
 from scipy.spatial import cKDTree
 from shapely.geometry import Point
@@ -73,3 +80,78 @@ def reproject_raster(in_path, out_path, to_crs = CRS.from_string('EPSG:4326')):
                     dst_crs=to_crs,
                     resampling=Resampling.nearest)
     return(out_path)
+
+def getSample(raster, pts, data):
+    src = rasterio.open(raster)
+    sample = src.sample(pts)
+    arr = np.fromiter(sample, dtype=np.uint8)
+    src.close()
+    for ii in range(len(arr)):
+        data[ii] = min(arr[ii], data[ii])
+
+def extract_value_multi_thread(r_path: str, pt_gdf, sample_name: str, max_valid_value = 200, RESULT_DATA_TYPE = np.int16, NODATA_VAL = -9999):
+    # Check if variable points to a dir of rasters or a single raster
+    if len(os.path.splitext(r_path)[-1]) == 0:
+        # get a list of tiles
+        print("Get list of rasters")
+        t_list = glob.glob(os.path.join(r_path, "*.tif"))
+        print(f'Total number of tiles {len(t_list)}')
+    else:
+        print('Single raster')
+        t_list = [r_path]
+        
+    DO_REPROJ = True
+    pt_gdf_prj_str = str(pt_gdf.crs).split(':')[-1]
+    with rasterio.open(t_list[0]) as src:
+        
+        if pt_gdf_prj_str in str(src.crs):
+            print(pt_gdf.crs)
+            print(src.crs)
+            print('no re-projection needed.')
+            DO_REPROJ = False
+            
+    if DO_REPROJ:
+        # project gdf to rasters's CRS
+        print("Re-project points to match raster")
+        tmp = rasterio.open(t_list[0])
+        pt_gdf = pt_gdf.to_crs(tmp.crs)
+        tmp.close()
+            
+    print('extract points coords')
+    pt_coord = [(pt.x, pt.y) for pt in pt_gdf.geometry]
+    
+    print('get boundingbox from points')
+    bnd = pt_gdf.total_bounds
+    pt_bnd = BoundingBox(bnd[0], bnd[1], bnd[2], bnd[3])
+    
+    print('loop through tiles & update sample values')
+    print("Sampling rasters ...")
+    r = mp.Array('i', np.full(len(pt_coord), 500)) # <-- this background value should not be negative and not be within the valid data range
+    jobs = []
+    
+    ### TO RUN A SHORT TEST
+    ### for fn in t_list[:100]:
+    for fn in t_list:
+        
+        ds = rasterio.open(fn)
+        r_bnd = ds.bounds
+        ds.close()
+        if not disjoint_bounds(r_bnd, pt_bnd):
+            j = mp.Process(target=getSample, args=(fn, pt_coord, r))
+            jobs.append(j)
+            j.start()
+        #else:
+        #    print(f"PASS   {os.path.basename(fn)}")
+            
+    for j in jobs:
+        j.join()
+        
+    ## merge sample back to gdf
+    print("Add new column")
+    rslt = np.array(r[:]).astype(RESULT_DATA_TYPE)
+    rslt = np.where(rslt <= max_valid_value, rslt, NODATA_VAL)
+    pt_gdf[sample_name] = pd.Categorical(rslt)
+    
+    print("Complete")
+    
+    return pt_gdf

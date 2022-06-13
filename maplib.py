@@ -232,6 +232,48 @@ def ADD_ATL08_OBS_TO_MAP(atl08_gdf, MAP_COL, DO_NIGHT, NIGHT_FLAG_NAME, foliumMa
     #LayerControl().add_to(foliumMap)
     return foliumMap
 
+def ADD_OBS_TO_MAP(pt_gdf, MAP_Z_COL, foliumMap, RADIUS=10, MAP_TITLE='Vegetation height from  ATL08', VMAX=25, VMIN=0):
+    
+    pal_z_col_cmap = cm.LinearColormap(colors = ['black','#636363','#fc8d59','#fee08b','#ffffbf','#d9ef8b','#91cf60','#1a9850'], vmin=VMIN, vmax=VMAX)
+    pal_z_col_cmap.caption = f'{MAP_TITLE} ({MAP_Z_COL})'
+    
+    # https://stackoverflow.com/questions/61263787/folium-featuregroup-in-python
+    #feature_group = folium.FeatureGroup('ATL08')  
+    
+    if MAP_Z_COL is not None:
+        print(f'Mapping {len(pt_gdf)} observations of {MAP_Z_COL}')
+        cols_zip_list = [pt_gdf.lat, pt_gdf.lon, pt_gdf[MAP_Z_COL]]
+        for lat, lon, z_col in zip(*cols_zip_list):
+            PT_OBS = CircleMarker(location=[lat, lon],
+                                    radius = RADIUS,
+                                    weight = 0.75,
+                                    tooltip = str(round(z_col,2)),
+                                    fill=True,
+                                    #fill_color=getfill(h_can),
+                                    color = pal_z_col_cmap(z_col),
+                                    opacity = 1,
+                                    name = f"{MAP_TITLE} obs"
+                       )
+            PT_OBS.add_to(foliumMap)
+        foliumMap.add_child(pal_z_col_cmap)
+    else:
+        print(f'Mapping {len(pt_gdf)} observations of {MAP_TITLE}')
+        cols_zip_list = [pt_gdf.lat, pt_gdf.lon]
+        for lat, lon in zip(*cols_zip_list):
+            PT_OBS = CircleMarker(location=[lat, lon],
+                                    radius = RADIUS,
+                                    weight = 0.75,
+                                    
+                                    fill=True,
+                                    #fill_color=getfill(h_can),
+                                    color = 'red',
+                                    opacity = 1,
+                                    name = f"{MAP_TITLE} obs"
+                       )
+            PT_OBS.add_to(foliumMap) 
+
+    return foliumMap
+
 def ADD_ATL03_OBS_TO_MAP(atl03_gdf, foliumMap):
     
     for lat, lon, phclassname, phcolor, elev in zip(atl03_gdf.lat, atl03_gdf.lon, atl03_gdf['class_name'], atl03_gdf['color'], atl03_gdf['elev']):
