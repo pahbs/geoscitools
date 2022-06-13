@@ -363,7 +363,7 @@ def MAP_FOLIUM(ADD_LAYER=False, LAYER_FN=None, basemaps=basemaps, fig_w=1000, fi
     
     return foliumMap
     
-def MAP_ATL08_FOLIUM(atl08_gdf, MAP_COL='h_can', DO_NIGHT=True, NIGHT_FLAG_NAME='night_flg' , ADD_LAYER=True, LAYER_FN=None, basemaps=basemaps, fig_w=1000, fig_h=400, RADIUS=10):
+def MAP_ATL08_FOLIUM(atl08_gdf, MAP_COL='h_can', DO_NIGHT=True, NIGHT_FLAG_NAME='night_flg', ADD_LAYER=True, LAYER_FN=None, basemaps=basemaps, fig_w=1000, fig_h=400, RADIUS=10):
     
     if LAYER_FN is None:
         ADD_LAYER=False

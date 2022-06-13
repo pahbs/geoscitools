@@ -15,6 +15,7 @@ import pprint
 
 import glob
 import os
+import s3fs
 
 def parse_aws_creds(credentials_fn):
     
@@ -56,12 +57,17 @@ def get_rio_aws_session_from_creds(credentials_fn):
     
     return rio_aws_session
 
-def get_s3_fs_from_creds(credentials_fn):
+def get_s3_fs_from_creds(credentials_fn=None, anon=False):
     
-    profile_name, aws_access_key_id, aws_secret_access_key = parse_aws_creds(credentials_fn)
-
-    s3_fs = s3fs.S3FileSystem(profile=profile_name, key=aws_access_key_id, secret=aws_secret_access_key)
-
+    if anon:
+        s3_fs = s3fs.S3FileSystem(anon=anon)
+    else:
+        if credentials_fn is not None:
+            profile_name, aws_access_key_id, aws_secret_access_key = parse_aws_creds(credentials_fn)
+            s3_fs = s3fs.S3FileSystem(profile=profile_name, key=aws_access_key_id, secret=aws_secret_access_key)
+        else:
+            print("Must provide a credentials filename if anon=False")
+            os._exit(1)
     return s3_fs
 
 def resample_raster(raster, out_path=None, scale=2):
