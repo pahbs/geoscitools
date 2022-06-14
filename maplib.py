@@ -291,23 +291,27 @@ def ADD_ATL03_OBS_TO_MAP(atl03_gdf, foliumMap):
 
     return foliumMap
 
-def MAP_LAYER_FOLIUM(LAYER=None, LAYER_COL_NAME=None, fig_w=1000, fig_h=400, lat_start=60, lon_start=-120, zoom_start=8):      
-    
-    #Map the Layers
-    Map_Figure=Figure(width=fig_w,height=fig_h)
-    foliumMap = Map(
-        tiles=None,
-        location=(lat_start, lon_start),
-        zoom_start=zoom_start, 
-        control_scale=True
-    )
-    Map_Figure.add_child(foliumMap)
+def MAP_LAYER_FOLIUM(LAYER=None, LAYER_COL_NAME=None, foliumMap=None, fig_w=1000, fig_h=400, lat_start=60, lon_start=-120, zoom_start=8, 
+                     LAYER_NAME = 'footprints',
+                     LAYER_STYLE_DICT={'fillColor': 'gray', 'color': 'red', 'weight' : 0.75, 'opacity': 1, 'fillOpacity': 0.5}):      
+    NEW_MAP = False
+    if foliumMap is None:
+        NEW_MAP = True
+        #Map the Layers
+        Map_Figure=Figure(width=fig_w,height=fig_h)
+        foliumMap = Map(
+            tiles=None,
+            location=(lat_start, lon_start),
+            zoom_start=zoom_start, 
+            control_scale=True
+        )
+        Map_Figure.add_child(foliumMap)
     
     if LAYER is not None:
         GEOJSON_LAYER = GeoJson(
             LAYER,
-            name='footprints',
-            style_function=lambda x:{'fillColor': 'gray', 'color': 'red', 'weight' : 0.75, 'opacity': 1, 'fillOpacity': 0.5},
+            name=LAYER_NAME,
+            style_function=lambda x: LAYER_STYLE_DICT,
             tooltip=features.GeoJsonTooltip(
                 fields=[LAYER_COL_NAME],
                 aliases=[f'{LAYER_COL_NAME}:'],
@@ -315,18 +319,18 @@ def MAP_LAYER_FOLIUM(LAYER=None, LAYER_COL_NAME=None, fig_w=1000, fig_h=400, lat
         )
         #GeoJson(LAYER, name='footprints', style_function=lambda x:{'fillColor': 'gray', 'color': 'red', 'weight' : 0.75, 'opacity': 1, 'fillOpacity': 0.5}).add_to(foliumMap)
         GEOJSON_LAYER.add_to(foliumMap)
-        
+ 
     basemaps['Imagery'].add_to(foliumMap)
     basemaps['basemap_gray'].add_to(foliumMap)
     basemaps['ESRINatGeo'].add_to(foliumMap)
-    
+
     LayerControl().add_to(foliumMap)
     plugins.Geocoder().add_to(foliumMap)
     plugins.MousePosition().add_to(foliumMap)
     minimap = plugins.MiniMap()
     plugins.Fullscreen().add_to(foliumMap)
     foliumMap.add_child(minimap)
-    
+
     return foliumMap
 
 def MAP_FOLIUM(ADD_LAYER=False, LAYER_FN=None, basemaps=basemaps, fig_w=1000, fig_h=400, lat_start=5, lon_start=-17, zoom_start=8, LAYER_NAME="HRSI CHM footprints"):
