@@ -27,6 +27,12 @@ def atl08_io(ATL08_CSV_OUTPUT_DIR, YEAR_SEARCH, DO_PICKLE=True, LENGTH_SEG=100):
         # Merge all files in the list
         print("Creating pandas data frame...")
         atl08_gdf = pd.concat((pd.read_csv(f) for f in all_atl08_csvs ), sort=False, ignore_index=True) # <--generator is (), list is []
+        if LENGTH_SEG == 20:
+            print(f"Creating a gdf for {YEAR_SEARCH} @ {LENGTH_SEG}m...")
+            atl08_gdf.rename(columns={'lon': 'lon_100m', 'lat': 'lat_100m'}, inplace=True)
+            atl08_gdf.rename(columns={'lon_20m': 'lon', 'lat_20m': 'lat'}, inplace=True)
+            atl08_gdf = atl08_gdf[atl08_gdf.h_can_20m < 3.402823 * 1e38]
+
         atl08_gdf = GeoDataFrame(atl08_gdf, geometry=gpd.points_from_xy(atl08_gdf.lon, atl08_gdf.lat), crs='epsg:4326')#.sample(frac=SAMP_FRAC)
 
         if DO_PICKLE:
