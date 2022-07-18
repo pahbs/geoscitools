@@ -232,6 +232,63 @@ def ADD_ATL08_OBS_TO_MAP(atl08_gdf, MAP_COL, DO_NIGHT, NIGHT_FLAG_NAME, foliumMa
     #LayerControl().add_to(foliumMap)
     return foliumMap
 
+def GET_ATL08_CMAP(CMAP_COLORS=['black','#636363','#fc8d59','#fee08b','#ffffbf','#d9ef8b','#91cf60','#1a9850'], VMAX=25, MAP_COL='h_can'):
+    pal_height_cmap = cm.LinearColormap(colors = CMAP_COLORS, vmin=0, vmax=VMAX)
+    pal_height_cmap.caption = f'Vegetation height from  ATL08 ({MAP_COL})'
+    return pal_height_cmap
+
+def ADD_ATL08_GROUPS_TO_MAP(atl08_gdf, MAP_COL, foliumMap, DO_NIGHT=False, NIGHT_FLAG_NAME='night_flg', GROUP_COL='y', RADIUS=10):
+    
+    pal_height_cmap = GET_ATL08_CMAP()
+    
+    night_flg_label = 'day/night'
+    if DO_NIGHT:
+        atl08_gdf = atl08_gdf[atl08_gdf[NIGHT_FLAG_NAME]== 1]
+        night_flg_label = 'night'
+    print(f'Mapping {len(atl08_gdf)} {night_flg_label} ATL08 observations of {MAP_COL}')
+    
+    # https://stackoverflow.com/questions/61263787/folium-featuregroup-in-python
+    #feature_group = folium.FeatureGroup('ATL08')
+    
+    # https://stackoverflow.com/questions/69510122/how-to-add-categorical-layered-data-to-layercontrol-in-python-folium-map
+    # point_layer name list
+    all_gp = atl08_gdf[GROUP_COL].to_list()
+    unique_gp = list(set(all_gp))
+    print(f"Mapping unique groups in {GROUP_COL}: {unique_gp}")
+    vlist = []
+    for i,k in enumerate(unique_gp):
+        locals()[f'point_layer{i}'] = folium.FeatureGroup(name=k)
+        vlist.append(locals()[f'point_layer{i}'])
+    # Creating list for point_layer
+    pl_group = []
+    for n in all_gp:
+        for v in vlist:
+            #print(vars(v)['layer_name'])
+            if n == vars(v)['layer_name']:
+                pl_group.append(v)
+    
+    atl08_cols_zip_list = [atl08_gdf.lat, atl08_gdf.lon, atl08_gdf[MAP_COL], pl_group]
+        
+    for (lat, lon, ht, grp) in zip(*atl08_cols_zip_list):
+        ATL08_obs_night = CircleMarker(location=[lat, lon],
+                                radius = RADIUS,
+                                weight = 0.75,
+                                tooltip = str(round(ht,2))+" m",
+                                fill=True,
+                                #fill_color=getfill(h_can),
+                                color = pal_height_cmap(ht),
+                                opacity = 1,
+                                name = f"ATL08 {night_flg_label} obs"
+                   )
+        ATL08_obs_night.add_to(grp)
+        
+        grp.add_to(foliumMap)
+        
+    foliumMap.add_child(pal_height_cmap)
+    #LayerControl().add_to(foliumMap)
+    return foliumMap
+
+
 def ADD_OBS_TO_MAP(pt_gdf, MAP_Z_COL, foliumMap, RADIUS=10, MAP_TITLE='Vegetation height from  ATL08', VMAX=25, VMIN=0, SHOW_COLORBAR=True):
     
     pal_z_col_cmap = cm.LinearColormap(colors = ['black','#636363','#fc8d59','#fee08b','#ffffbf','#d9ef8b','#91cf60','#1a9850'], vmin=VMIN, vmax=VMAX)
@@ -368,7 +425,7 @@ def MAP_FOLIUM(ADD_LAYER=False, LAYER_FN=None, basemaps=basemaps, fig_w=1000, fi
     
     return foliumMap
     
-def MAP_ATL08_FOLIUM(atl08_gdf, MAP_COL='h_can', DO_NIGHT=True, NIGHT_FLAG_NAME='night_flg', ADD_LAYER=True, LAYER_FN=None, basemaps=basemaps, fig_w=1000, fig_h=400, RADIUS=10):
+def MAP_ATL08_FOLIUM(atl08_gdf, MAP_COL='h_can', GROUP_COL='y', DO_NIGHT=True, NIGHT_FLAG_NAME='night_flg', ADD_LAYER=True, LAYER_FN=None, basemaps=basemaps, fig_w=1000, fig_h=400, RADIUS=10):
     
     if LAYER_FN is None:
         ADD_LAYER=False
@@ -401,13 +458,14 @@ def MAP_ATL08_FOLIUM(atl08_gdf, MAP_COL='h_can', DO_NIGHT=True, NIGHT_FLAG_NAME=
         lyr_style = {'fillColor': 'gray', 'color': 'gray', 'weight' : 0.75, 'opacity': 1, 'fillOpacity': 0.5}
         GeoJson(lyrs, name="HRSI CHM footprints", style_function=lambda x:lyr_style).add_to(foliumMap)
 
-    foliumMap = ADD_ATL08_OBS_TO_MAP(atl08_gdf, MAP_COL=MAP_COL, DO_NIGHT=DO_NIGHT, NIGHT_FLAG_NAME=NIGHT_FLAG_NAME, foliumMap=foliumMap, RADIUS=RADIUS)
+    #foliumMap = ADD_ATL08_OBS_TO_MAP(atl08_gdf, MAP_COL=MAP_COL, DO_NIGHT=DO_NIGHT, NIGHT_FLAG_NAME=NIGHT_FLAG_NAME, foliumMap=foliumMap, RADIUS=RADIUS)
+    foliumMap = ADD_ATL08_GROUPS_TO_MAP(atl08_gdf, MAP_COL=MAP_COL, GROUP_COL=GROUP_COL, DO_NIGHT=DO_NIGHT, NIGHT_FLAG_NAME=NIGHT_FLAG_NAME, foliumMap=foliumMap, RADIUS=RADIUS)
     #foliumMap.add_child(LayerControl()) #LayerControl().add_to(foliumMap)
     
     LayerControl().add_to(foliumMap)
     ## Add fullscreen button
     plugins.Fullscreen().add_to(foliumMap)
-    ##plugins.Geocoder().add_to(foliumMap)
+    plugins.Geocoder().add_to(foliumMap)
     plugins.MousePosition().add_to(foliumMap)
     minimap = plugins.MiniMap()
     foliumMap.add_child(minimap)
