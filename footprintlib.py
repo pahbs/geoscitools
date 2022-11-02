@@ -284,10 +284,13 @@ def raster_footprint(r_fn, DO_DATAMASK=True, GET_ONLY_DATASETMASK=True, R_READ_M
                     
         return footprints_gdf
     
-def build_footprint_db(gdf_list, TO_GCS=True, WRITE_GPKG=True, OUT_F_NAME='footprints.gpkg', OUT_LYR_NAME='footprints'):
+def build_footprint_db(gdf_list, TO_GCS=True, WRITE_GPKG=True, OUT_F_NAME='footprints.gpkg', OUT_LYR_NAME='footprints', DROP_DUPLICATES=True):
     
     print("Building GDF from list...")
     footprints_gdf = gpd.GeoDataFrame( pd.concat( gdf_list, ignore_index=True) )
+    
+    if DROP_DUPLICATES:
+        footprints_gdf = footprints_gdf.drop_duplicates()
     
     if TO_GCS:
         print("Converting to GCS...")

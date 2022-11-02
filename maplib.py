@@ -334,11 +334,11 @@ def ADD_OBS_TO_MAP(pt_gdf, MAP_Z_COL, foliumMap, RADIUS=10, MAP_TITLE='Vegetatio
 
 def ADD_ATL03_OBS_TO_MAP(atl03_gdf, foliumMap):
     
-    for lat, lon, phclassname, phcolor, elev in zip(atl03_gdf.lat, atl03_gdf.lon, atl03_gdf['class_name'], atl03_gdf['color'], atl03_gdf['elev']):
+    for lat, lon, phclassname, phcolor, elev, height in zip(atl03_gdf.lat, atl03_gdf.lon, atl03_gdf['class_name'], atl03_gdf['color'], atl03_gdf['elev'], atl03_gdf['height']):
             ATL03_obs = CircleMarker(location=[lat, lon],
                                     radius = 5,
                                     weight = 1,
-                                    tooltip = phclassname+": "+str(round(elev,2))+" m",
+                                    tooltip = phclassname+": "+str(round(height,2))+" m",
                                     fill=True,
                                     #fill_color=getfill(h_can),
                                     color = phcolor,
@@ -346,6 +346,23 @@ def ADD_ATL03_OBS_TO_MAP(atl03_gdf, foliumMap):
                                     name = f"ATL03 classified photons"
                        )
             ATL03_obs.add_to(foliumMap)
+
+    return foliumMap
+
+def ADD_POINT_OBS_TO_MAP(gdf, foliumMap):
+    
+    for lat, lon, site in zip(gdf.lat, gdf.lon, gdf['site']):
+            points_obs = CircleMarker(location=[lat, lon],
+                                    radius = 5,
+                                    weight = 1,
+                                    tooltip = site,
+                                    fill=True,
+                                    #fill_color=getfill(h_can),
+                                    color = "red",
+                                    opacity = 1,
+                                    name = f"Sites"
+                       )
+            points_obs.add_to(foliumMap)
 
     return foliumMap
 
