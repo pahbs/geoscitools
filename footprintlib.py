@@ -15,7 +15,106 @@ import pprint
 
 import glob
 import os
-import s3fs
+#import s3fs
+
+import xml.etree.ElementTree as et
+
+from osgeo import gdal, ogr, osr
+from shapely import wkt
+wgs_srs = osr.SpatialReference()
+wgs_srs.SetWellKnownGeogCS('WGS84')
+def xml2wkt(xml_fn):
+    import xml.etree.ElementTree as ET
+    tree = ET.parse(xml_fn)
+    #There's probably a cleaner way to do this with a single array instead of zipping
+    taglon = ['ULLON', 'URLON', 'LRLON', 'LLLON']
+    taglat = ['ULLAT', 'URLAT', 'LRLAT', 'LLLAT']
+    #dg_mosaic.py doesn't preserve the BAND_P xml tags 
+    #However, these are preserved in the STEREO_PAIR xml tags
+    #taglon = ['ULLON', 'LRLON', 'LRLON', 'ULLON']
+    #taglat = ['ULLAT', 'ULLAT', 'LRLAT', 'LRLAT']
+    x = []
+    y = []
+    for tag in taglon:
+        elem = tree.find('.//%s' % tag)
+        #NOTE: need to check to make sure that xml has these tags (dg_mosaic doesn't preserve)
+        x.append(elem.text)
+    for tag in taglat:
+        elem = tree.find('.//%s' % tag)
+        y.append(elem.text)
+    #Want to complete the polygon by returning to first point
+    x.append(x[0])
+    y.append(y[0])
+    geom_wkt = 'POLYGON(({0}))'.format(', '.join(['{0} {1}'.format(*a) for a in zip(x,y)]))
+    return geom_wkt
+
+def geom_union(geom_list, **kwargs):
+    convex=False
+    union = geom_list[0]
+    for geom in geom_list[1:]:
+        union = union.Union(geom)
+    if convex:
+        union = union.ConvexHull()
+    return union
+
+def xml2geom(xml_fn):
+    """
+    Get OGR Geometry object
+    """
+    geom_wkt = xml2wkt(xml_fn)
+    geom = ogr.CreateGeometryFromWkt(geom_wkt)
+    #Hack for GDAL3, should reorder with (lat,lon) as specified
+    if int(gdal.__version__.split('.')[0]) >= 3:
+        wgs_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    geom.AssignSpatialReference(wgs_srs)
+    return geom
+
+def ogr2shapely(geom):
+    return wkt.loads(geom.ExportToWkt())
+
+def get_vhr_xml_image_attribute(xml_fn, ATTRIB_NAME):
+    xtree = et.parse(xml_fn)
+    xroot = xtree.getroot()
+    return(xroot.find('IMD').find('IMAGE').find(ATTRIB_NAME).text)
+
+def get_vhr_xml_band_attribute(xml_fn, BAND_NAME, ATTRIB_NAME):
+    xtree = et.parse(xml_fn)
+    xroot = xtree.getroot()
+    return(xroot.find('IMD').find(BAND_NAME).find(ATTRIB_NAME).text)
+
+def make_vhr_xml_dataframe(xml_fn: str, 
+                  BAND_FOR_BOUNDS = 'BAND_N',
+                  CORNER_COLS_LIST = ['ULLON','ULLAT','ULHAE','URLON','URLAT','URHAE','LLLON','LLLAT','LLHAE','LRLON','LRLAT','LRHAE'],
+                  DF_COLS_LIST: list = ['SATID','CATID','TLCTIME','MEANPRODUCTGSD', 'MEANSUNAZ','MEANSATEL','MEANSATAZ','MEANSATEL','MEANINTRACKVIEWANGLE','MEANCROSSTRACKVIEWANGLE','MEANOFFNADIRVIEWANGLE','CLOUDCOVER','SCANDIRECTION']):
+    
+    '''Read the XML of a VHR image and return a dataframe of its metadata
+    '''
+    try:
+        #print(xml_fn)
+        xtree = et.parse(xml_fn)
+        xroot = xtree.getroot()
+        for child in xroot:
+            #print(child.tag, child.attrib)
+            if 'IMD' in child.tag:
+                #print(child.tag, child.attrib)
+                for child_1 in child:
+                    if BAND_FOR_BOUNDS == child_1.tag:
+                        for child_2 in child_1:
+                            if CORNER_COLS_LIST[0] in child_2.tag:
+                                df1 = pd.DataFrame([get_vhr_xml_band_attribute(xml_fn, BAND_FOR_BOUNDS, COL) for COL in CORNER_COLS_LIST] ).transpose()
+                                df1.columns = CORNER_COLS_LIST
+                    if 'IMAGE' == child_1.tag:
+                        #print(child_1.tag, child_1.attrib)
+                        for child_2 in child_1:
+                            if DF_COLS_LIST[0] in child_2.tag:
+                                #print(child_2.tag, child_2.attrib)
+                                df2 = pd.DataFrame([get_vhr_xml_image_attribute(xml_fn, COL) for COL in DF_COLS_LIST] ).transpose()
+                                df2.columns = DF_COLS_LIST
+        df1['geom_poly'] = ogr2shapely(xml2geom(xml_fn))
+        return(pd.concat([df2, df1], axis=1))
+    except Exception as e: 
+        print(e)
+        print(xml_fn)
 
 def parse_aws_creds(credentials_fn):
     
@@ -249,40 +348,43 @@ def get_geom_from_bounds(rio_dataset, footprint_name=None):
     return(geom)
 
 def raster_footprint(r_fn, DO_DATAMASK=True, GET_ONLY_DATASETMASK=True, R_READ_MODE='r+', MANY_CRS=False):
-    
-    with rasterio.open(r_fn, mode=R_READ_MODE) as dataset:
-        
-        if DO_DATAMASK:
-            if GET_ONLY_DATASETMASK:
-                job_string = 'valid data mask (high memory)'
+    try:
+        with rasterio.open(r_fn, mode=R_READ_MODE) as dataset:
+
+            if DO_DATAMASK:
+                if GET_ONLY_DATASETMASK:
+                    job_string = 'valid data mask (high memory)'
+                else:
+                    job_string = 'valid data mask + the nodata (most memory)'
+                #geom, dataset.crs = get_geom_from_datasetmask(dataset)
+                geom = get_geom_from_datasetmask(dataset, GET_ONLY_DATASETMASK=GET_ONLY_DATASETMASK)
+
             else:
-                job_string = 'valid data mask + the nodata (most memory)'
-            #geom, dataset.crs = get_geom_from_datasetmask(dataset)
-            geom = get_geom_from_datasetmask(dataset, GET_ONLY_DATASETMASK=GET_ONLY_DATASETMASK)
-            
-        else:
-            job_string = 'raster image bounds (low memory)'
-            geom = get_geom_from_bounds(dataset)
-        
-        footprints_gdf  = gpd.GeoDataFrame.from_features(geom, crs=dataset.crs)
-        #print(footprints_gdf.crs.axis_info[0].unit_name)
-        #print(dataset.crs)
-        
-        footprints_gdf['path'], footprints_gdf['file'] = os.path.split(r_fn)
+                job_string = 'raster image bounds (low memory)'
+                geom = get_geom_from_bounds(dataset)
 
-        if False:
-            print(f'Getting {job_string} for: {os.path.basename(r_fn)} ...')
-        
-        if 'm' in footprints_gdf.crs.axis_info[0].unit_name:
-            # Get area
-            footprints_gdf["area_km2"] = footprints_gdf['geometry'].area/1e6
-            footprints_gdf["area_ha"] = footprints_gdf['geometry'].area/1e4
+            footprints_gdf  = gpd.GeoDataFrame.from_features(geom, crs=dataset.crs)
+            #print(footprints_gdf.crs.axis_info[0].unit_name)
+            #print(dataset.crs)
 
-        if MANY_CRS:
-            #print('There are multiple CRSs in this set, so reprojecting everything to 4326...')
-            footprints_gdf = footprints_gdf.to_crs(4326)
-                    
-        return footprints_gdf
+            footprints_gdf['path'], footprints_gdf['file'] = os.path.split(r_fn)
+
+            if False:
+                print(f'Getting {job_string} for: {os.path.basename(r_fn)} ...')
+
+            if 'm' in footprints_gdf.crs.axis_info[0].unit_name:
+                # Get area
+                footprints_gdf["area_km2"] = footprints_gdf['geometry'].area/1e6
+                footprints_gdf["area_ha"] = footprints_gdf['geometry'].area/1e4
+
+            if MANY_CRS:
+                #print('There are multiple CRSs in this set, so reprojecting everything to 4326...')
+                footprints_gdf = footprints_gdf.to_crs(4326)
+
+            return footprints_gdf
+    except Exception as e: 
+        print(e)
+        print(r_fn)
     
 def build_footprint_db(gdf_list, TO_GCS=True, WRITE_GPKG=True, OUT_F_NAME='footprints.gpkg', OUT_LYR_NAME='footprints', DROP_DUPLICATES=True):
     
