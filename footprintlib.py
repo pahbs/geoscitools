@@ -5,6 +5,8 @@ from rasterio.plot import show
 from rasterio import Affine, MemoryFile
 from rasterio.enums import Resampling
 
+import numpy as np
+
 import pandas as pd
 import geopandas as gpd
 import shapely
@@ -330,8 +332,13 @@ def get_geom_from_datasetmask(rio_dataset, GET_ONLY_DATASETMASK=True):
                     {'properties': {'raster_value': v}, 'geometry': s} for i, (s, v) in enumerate(rasterio.features.shapes(rio_dataset.dataset_mask(), transform=rio_dataset.transform))
                 )
     else:
+        ma = np.ma.masked_invalid(rio_dataset.read())
+        if rio_dataset.profile['nodata'] is not None:
+            ma = np.ma.masked_where(ma == rio_dataset.profile['nodata'], ma)
+        ma[ma!=np.nan]=1
         results = (
-                    {'properties': {'raster_value': v}, 'geometry': s} for i, (s, v) in enumerate(rasterio.features.shapes(rio_dataset.read_masks(), transform=rio_dataset.transform))
+                    #{'properties': {'raster_value': v}, 'geometry': s} for i, (s, v) in enumerate(rasterio.features.shapes(rio_dataset.read_masks(), transform=rio_dataset.transform))
+                    {'properties': {'raster_value': v}, 'geometry': s} for i, (s, v) in enumerate(rasterio.features.shapes(ma, transform=rio_dataset.transform))
                 )
         
     geom = list(results)
@@ -345,13 +352,15 @@ def get_geom_from_bounds(rio_dataset, footprint_name=None):
     #geom = {'properties': {'raster_val': None }, 'geometry': {'type': 'Polygon', 'coordinates': [box(*rio_dataset.bounds)] } } 
     results = [{"properties":{'footprint_name': footprint_name}, "geometry": {'type': 'Polygon', 'coordinates': [list(box(*rio_dataset.bounds).exterior.coords)] } } ]
     geom = list(results)
+    #print(geom)
     return(geom)
 
-def raster_footprint(r_fn, DO_DATAMASK=True, GET_ONLY_DATASETMASK=True, R_READ_MODE='r+', MANY_CRS=False):
+def raster_footprint(r_fn, DO_DATAMASK=True, GET_ONLY_DATASETMASK=True, R_READ_MODE='r+', MANY_CRS=False, DISSOLVE_FIELD='file'):
     try:
         with rasterio.open(r_fn, mode=R_READ_MODE) as dataset:
 
             if DO_DATAMASK:
+                # TODO: Fix this. This flag does nothing right now
                 if GET_ONLY_DATASETMASK:
                     job_string = 'valid data mask (high memory)'
                 else:
@@ -362,12 +371,21 @@ def raster_footprint(r_fn, DO_DATAMASK=True, GET_ONLY_DATASETMASK=True, R_READ_M
             else:
                 job_string = 'raster image bounds (low memory)'
                 geom = get_geom_from_bounds(dataset)
-
+            
+            # Dissolve so you dont return 1 polygon for each unique raster value...
             footprints_gdf  = gpd.GeoDataFrame.from_features(geom, crs=dataset.crs)
+            
             #print(footprints_gdf.crs.axis_info[0].unit_name)
             #print(dataset.crs)
 
             footprints_gdf['path'], footprints_gdf['file'] = os.path.split(r_fn)
+            
+            if DISSOLVE_FIELD in footprints_gdf.columns:
+                footprints_gdf = footprints_gdf.dissolve(by=DISSOLVE_FIELD, as_index=False)
+                if 'raster_value' in footprints_gdf.columns:
+                    footprints_gdf = footprints_gdf.drop(columns=['raster_value'])
+            else:
+                print(f"Can't dissolve by {DISSOLVE_FIELD}. Field not found.")
 
             if False:
                 print(f'Getting {job_string} for: {os.path.basename(r_fn)} ...')
@@ -380,7 +398,8 @@ def raster_footprint(r_fn, DO_DATAMASK=True, GET_ONLY_DATASETMASK=True, R_READ_M
             if MANY_CRS:
                 #print('There are multiple CRSs in this set, so reprojecting everything to 4326...')
                 footprints_gdf = footprints_gdf.to_crs(4326)
-
+                
+            
             return footprints_gdf
     except Exception as e: 
         print(e)
