@@ -20,6 +20,22 @@ gpd2 = gpd.GeoDataFrame([['Work', Point(0, 1.1)], ['Shops', Point(2.5, 2)],
                          ['Home', Point(1, 1.1)]],
                         columns=['Place', 'geometry'])
 
+def make_points_grid(extent_df, spacing_m, grid_crs=3857):
+    
+    x_spacing = spacing_m #The point spacing you want
+    y_spacing = spacing_m
+
+    xmin, ymin, xmax, ymax = extent_df.to_crs(grid_crs).total_bounds #Find the bounds of all polygons in the df
+    xcoords = [c for c in np.arange(xmin, xmax, x_spacing)] #Create x coordinates
+    ycoords = [c for c in np.arange(ymin, ymax, y_spacing)] #And y
+
+    coordinate_pairs = np.array(np.meshgrid(xcoords, ycoords)).T.reshape(-1, 2) #Create all combinations of xy coordinates
+    geometries = gpd.points_from_xy(coordinate_pairs[:,0], coordinate_pairs[:,1]) #Create a list of shapely points
+
+    pointdf = gpd.GeoDataFrame(geometry=geometries, crs=grid_crs).to_crs(4326) #Create the point df
+    
+    return pointdf
+
 def ckdnearest(gdA, gdB):
     '''Find nearest point
     https://gis.stackexchange.com/questions/222315/finding-nearest-point-in-other-geodataframe-using-geopandas
@@ -155,3 +171,108 @@ def extract_value_multi_thread(r_path: str, pt_gdf, sample_name: str, max_valid_
     print("Complete")
     
     return pt_gdf
+
+def extract_zonal_gdf_point(r_fn, GDF, bandnames: list, reproject=True, TEST=False):
+    
+    from rasterstats import zonal_stats
+    
+    '''
+    Extract pixel values of a raster to point in a Point geodataframe
+   
+    '''
+    
+    with rasterio.open(r_fn) as r_src:
+        print("\tExtracting raster values from: ", r_fn)
+
+        if reproject:
+            
+            print("\tRe-project geodataframe to match raster...")
+            GDF = GDF.to_crs(r_src.crs)
+            
+        for i, bandname in enumerate(bandnames):
+            bnum = i + 1
+            
+            r = r_src.read(bnum, masked=True)
+
+            pt_coord = [(pt.x, pt.y) for pt in GDF.geometry]
+
+            # Use 'sample' from rasterio
+            
+            pt_sample = r_src.sample(pt_coord, bnum)
+
+            pt_sample_eval = np.fromiter(pt_sample, dtype=r.dtype)
+
+            # Deal with no data...
+            pt_sample_eval_ma = np.ma.masked_equal(pt_sample_eval, r_src.nodata)
+            GDF[bandname] = pt_sample_eval_ma.astype(float).filled(np.nan)
+
+            # Rename cols
+            #GDF = rename_columns(GDF, bandname, stats_list = None)
+            GDF = GDF.rename(columns = {bandname: 'val_'+bandname})
+            
+    return GDF
+
+def extract_zonal_gdf_poly(r_fn, GDF, bandnames: list, reproject=True, stats_list = ['max','min','median','mean','percentile_98','count']):
+    
+    from rasterstats import zonal_stats
+    
+    with rasterio.open(r_fn) as r_src:
+        print("\tExtracting raster values from: ", r_fn)
+
+        if reproject:
+            
+            print("\tRe-project geodataframe to match raster...")
+            GDF = GDF.to_crs(r_src.crs)
+
+        for i, bandname in enumerate(bandnames):
+            bnum = i + 1
+            GDF = GDF.join(
+                pd.DataFrame(
+                    zonal_stats(
+                        vectors=GDF.to_crs(r_src.crs), 
+                        raster= r_src.read(bnum, masked=True),
+                        affine= r_src.transform,
+                        stats=stats_list
+                    )
+                ),
+                how='left'
+            )
+        
+            # Rename cols
+            GDF = rename_columns(GDF, bandname, stats_list)
+            
+    return GDF
+
+def rename_columns(GDF, bandname, stats_list):
+    if stats_list is not None:
+        names_list = ['val_'+ bandname + '_' + s for s in stats_list]
+        rename_dict = dict(zip(stats_list, names_list))      
+        GDF = GDF.rename(columns = rename_dict)
+        
+    return GDF
+
+def extract_zonal_gdf(r_fn, GDF, bandnames: list, reproject=True, return_src_path=False, OUTDIR=None, OUTNAME=None):
+    
+    """Extract raster band values to the obs of a geodataframe 
+    - modified version from ExtractUtils - captures raster name in output pdf (return_src_path)
+    """
+
+    if 'Polygon' in GDF.geometry.iloc[0].geom_type:
+        feature_type = 'polygon'
+        print(feature_type)
+        GDF = extract_zonal_gdf_poly(r_fn, GDF, bandnames, reproject=True)
+    else:
+        feature_type = 'point'
+        print(feature_type)
+        GDF = extract_zonal_gdf_point(r_fn, GDF, bandnames, reproject=True)
+
+
+    if return_src_path:
+        GDF['src_file'] = os.path.basename(r_fn) 
+        GDF['src_path'] = os.path.dirname(r_fn)
+    
+    print(f'\Finished zonal_stats for {len(GDF)} features ({feature_type}) with raster info from {len(bandnames)} bands: {bandnames}')
+    if OUTDIR is None:
+        return(GDF)
+    else:
+        GDF.to_file(os.path.join(OUTDIR, f'zonal_{OUTNAME}_{os.path.splitext(os.path.basename(r_fn))[0]}.gpkg'), driver='GPKG')

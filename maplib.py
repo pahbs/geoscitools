@@ -168,31 +168,41 @@ def MAP_ATL08_POLAR(atl08_gdf, YEAR=2021, MAP_COL='h_can'):
 
 
     plt.show()
-    
+
+basemap_xyz_url = {
+    'google_terrain': 'https://mt1.google.com/vt/lyrs=p&x={x}&y={y}&z={z}',
+    'esri_gray':      'http://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    'esri_imagery':   'https://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    'esri_natgeo':    'https://server.arcgisonline.com/ArcGIS/rest/services/NatGeo_World_Map/MapServer/tile/{z}/{y}/{x}'
+}
 basemaps = {
        'Google Terrain' : TileLayer(
-        tiles = 'https://mt1.google.com/vt/lyrs=p&x={x}&y={y}&z={z}',
+        tiles = basemap_xyz_url['google_terrain'],
+        #tiles = 'https://mt1.google.com/vt/lyrs=p&x={x}&y={y}&z={z}',
         attr = 'Google',
         name = 'Google Terrain',
         overlay = False,
         control = True
        ),
         'basemap_gray' : TileLayer(
-            tiles="http://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+            tiles = basemap_xyz_url['esri_gray'],
+            #tiles="http://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}",
             opacity=1,
             name="World gray basemap",
             attr="ESRI",
             overlay=False
         ),
         'Imagery' : TileLayer(
-            tiles='https://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+            tiles = basemap_xyz_url['esri_imagery'],
+            #tiles='https://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
             opacity=1,
             name="World Imagery",
             attr="ESRI",
             overlay=False
         ),
         'ESRINatGeo' : TileLayer(
-            tiles='https://server.arcgisonline.com/ArcGIS/rest/services/NatGeo_World_Map/MapServer/tile/{z}/{y}/{x}',
+            tiles = basemap_xyz_url['esri_natgeo'],
+            #tiles='https://server.arcgisonline.com/ArcGIS/rest/services/NatGeo_World_Map/MapServer/tile/{z}/{y}/{x}',
             opacity=1,
             name='ESRI NatGeo',
             attr='ESRI',
@@ -232,14 +242,15 @@ def ADD_ATL08_OBS_TO_MAP(atl08_gdf, MAP_COL, DO_NIGHT, NIGHT_FLAG_NAME, foliumMa
     #LayerControl().add_to(foliumMap)
     return foliumMap
 
-def GET_ATL08_CMAP(CMAP_COLORS=['black','#636363','#fc8d59','#fee08b','#ffffbf','#d9ef8b','#91cf60','#1a9850'], VMAX=25, MAP_COL='h_can'):
+def GET_ATL08_HT_CMAP(CMAP_COLORS=['black','#636363','#fc8d59','#fee08b','#ffffbf','#d9ef8b','#91cf60','#1a9850'], VMAX=25, MAP_COL='h_can'):
     pal_height_cmap = cm.LinearColormap(colors = CMAP_COLORS, vmin=0, vmax=VMAX)
     pal_height_cmap.caption = f'Vegetation height from  ATL08 ({MAP_COL})'
     return pal_height_cmap
 
-def ADD_ATL08_GROUPS_TO_MAP(atl08_gdf, MAP_COL, foliumMap, DO_NIGHT=False, NIGHT_FLAG_NAME='night_flg', GROUP_COL='y', RADIUS=10):
+def ADD_ATL08_GROUPS_TO_MAP(atl08_gdf, MAP_COL, foliumMap, DO_NIGHT=False, NIGHT_FLAG_NAME='night_flg', GROUP_COL='y', RADIUS=10, VMAX=25):
     
-    pal_height_cmap = GET_ATL08_CMAP()
+    # TODO: if 'h_can' in MAP_COL:
+    pal_height_cmap = GET_ATL08_HT_CMAP(VMAX=VMAX)
     
     night_flg_label = 'day/night'
     if DO_NIGHT:
@@ -400,11 +411,11 @@ def MAP_LAYER_FOLIUM(LAYER=None, LAYER_COL_NAME=None, foliumMap=None, fig_w=1000
     basemaps['ESRINatGeo'].add_to(foliumMap)
 
     LayerControl().add_to(foliumMap)
-    plugins.Geocoder().add_to(foliumMap)
+    #plugins.Geocoder().add_to(foliumMap)
     plugins.MousePosition().add_to(foliumMap)
     minimap = plugins.MiniMap()
     plugins.Fullscreen().add_to(foliumMap)
-    foliumMap.add_child(minimap)
+    #foliumMap.add_child(minimap)
 
     return foliumMap
 

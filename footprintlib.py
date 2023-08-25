@@ -5,7 +5,11 @@ from rasterio.plot import show
 from rasterio import Affine, MemoryFile
 from rasterio.enums import Resampling
 
+from scipy import ndimage
+
 import numpy as np
+import matplotlib.pyplot as plt
+import contextily as ctx
 
 import pandas as pd
 import geopandas as gpd
@@ -325,7 +329,7 @@ def raster_footprint_gdf(r_fn_list, OUT_F_NAME='footprints.gpkg', OUT_LYR_NAME='
     
     return footprints_gdf
 
-def get_geom_from_datasetmask(rio_dataset, GET_ONLY_DATASETMASK=True):
+def get_geom_from_datasetmask(rio_dataset, GET_ONLY_DATASETMASK=True, MASK_OUT_VALUE=None):
     
     if GET_ONLY_DATASETMASK:
         results = (
@@ -335,6 +339,8 @@ def get_geom_from_datasetmask(rio_dataset, GET_ONLY_DATASETMASK=True):
         ma = np.ma.masked_invalid(rio_dataset.read())
         if rio_dataset.profile['nodata'] is not None:
             ma = np.ma.masked_where(ma == rio_dataset.profile['nodata'], ma)
+        if MASK_OUT_VALUE is not None:
+            ma = np.ma.masked_where(ma == MASK_OUT_VALUE, ma)
         ma[ma!=np.nan]=1
         results = (
                     #{'properties': {'raster_value': v}, 'geometry': s} for i, (s, v) in enumerate(rasterio.features.shapes(rio_dataset.read_masks(), transform=rio_dataset.transform))
@@ -355,7 +361,7 @@ def get_geom_from_bounds(rio_dataset, footprint_name=None):
     #print(geom)
     return(geom)
 
-def raster_footprint(r_fn, DO_DATAMASK=True, GET_ONLY_DATASETMASK=True, R_READ_MODE='r+', MANY_CRS=False, DISSOLVE_FIELD='file'):
+def raster_footprint(r_fn, DO_DATAMASK=True, GET_ONLY_DATASETMASK=True, R_READ_MODE='r+', MANY_CRS=False, DISSOLVE_FIELD='file', MASK_OUT_VALUE=None, OUTDIR=None):
     try:
         with rasterio.open(r_fn, mode=R_READ_MODE) as dataset:
 
@@ -365,8 +371,9 @@ def raster_footprint(r_fn, DO_DATAMASK=True, GET_ONLY_DATASETMASK=True, R_READ_M
                     job_string = 'valid data mask (high memory)'
                 else:
                     job_string = 'valid data mask + the nodata (most memory)'
+                print(job_string)
                 #geom, dataset.crs = get_geom_from_datasetmask(dataset)
-                geom = get_geom_from_datasetmask(dataset, GET_ONLY_DATASETMASK=GET_ONLY_DATASETMASK)
+                geom = get_geom_from_datasetmask(dataset, GET_ONLY_DATASETMASK=GET_ONLY_DATASETMASK, MASK_OUT_VALUE=MASK_OUT_VALUE)
 
             else:
                 job_string = 'raster image bounds (low memory)'
@@ -399,8 +406,11 @@ def raster_footprint(r_fn, DO_DATAMASK=True, GET_ONLY_DATASETMASK=True, R_READ_M
                 #print('There are multiple CRSs in this set, so reprojecting everything to 4326...')
                 footprints_gdf = footprints_gdf.to_crs(4326)
                 
-            
-            return footprints_gdf
+            if OUTDIR is not None:
+                footprints_gdf.to_file(os.path.join(OUTDIR, os.path.basename(r_fn).replace('.tif','.gpkg') ), driver='GPKG')
+                footprints_gdf = None
+            else:
+                return footprints_gdf
     except Exception as e: 
         print(e)
         print(r_fn)
@@ -408,17 +418,240 @@ def raster_footprint(r_fn, DO_DATAMASK=True, GET_ONLY_DATASETMASK=True, R_READ_M
 def build_footprint_db(gdf_list, TO_GCS=True, WRITE_GPKG=True, OUT_F_NAME='footprints.gpkg', OUT_LYR_NAME='footprints', DROP_DUPLICATES=True):
     
     print("Building GDF from list...")
-    footprints_gdf = gpd.GeoDataFrame( pd.concat( gdf_list, ignore_index=True) )
-    
+    if TO_GCS:
+        print("Converting to each to GCS...")
+        #footprints_gdf = gpd.GeoDataFrame( pd.concat( gdf_list, ignore_index=True) )
+        footprints_gdf = pd.concat( [gdf.to_crs(4326) for gdf in gdf_list], ignore_index=True)
+    else:
+        footprints_gdf = pd.concat( gdf_list, ignore_index=True)
     if DROP_DUPLICATES:
         footprints_gdf = footprints_gdf.drop_duplicates()
     
-    if TO_GCS:
-        print("Converting to GCS...")
-        footprints_gdf = footprints_gdf.to_crs({'init': 'epsg:4326'})
+    #if TO_GCS:
+    #    print("Converting to GCS...")
+    #    footprints_gdf = footprints_gdf.to_crs({'init': 'epsg:4326'})
         
     if WRITE_GPKG:
         footprints_gdf.to_file(OUT_F_NAME, driver="GPKG", layer=OUT_LYR_NAME)
         print(f"Wrote out spatial footprints to {OUT_F_NAME}")
         
     return footprints_gdf
+
+def MAP_FOOTPRINTS(gdf, COL_NAME, CAT=True, CMAP='coolwarm', ax=None, fig=None, VMIN=None, VMAX=None):
+    
+    if VMIN is None or VMAX is None:
+        VMIN = min(gdf[COL_NAME])
+        VMAX = max(gdf[COL_NAME])
+    
+    if ax is None:
+        fig, (ax) = plt.subplots(nrows=1, ncols=1, figsize=(10,5))
+        
+    #colors = {'TOA':'tab:red', 'SR':'tab:green'}
+    #colors = {'QB02':'tab:pink', 'GE01':'tab:green', 'WV01':'tab:blue', 'WV02':'tab:red', 'WV03':'tab:purple'}
+
+
+
+    # Plot type
+    #ax = footprints_gdf_ahri_20220818_adapt.plot(ax=ax, alpha=0.5, ec='k', column='sensor', label='file', categorical=True, legend=True, cmap='viridis')
+
+    # Plot sensor of SR
+    ax = gdf.to_crs(4326).plot(ax=ax, alpha=0.75, 
+                                                   #ec='k', 
+                                                   column=COL_NAME, categorical=CAT, legend=True, cmap=CMAP, vmin=VMIN, vmax=VMAX)
+
+
+    ax = ctx.add_basemap(ax, crs=4326, 
+        #source = ctx.providers.Gaode.Satellite
+        #source = ctx.providers.Esri.WorldShadedRelief
+        source = ctx.providers.Esri.WorldGrayCanvas
+        #source = ctx.providers.Esri.NatGeoWorldMap
+        #source = ctx.providers.Esri.WorldImagery
+        #source = ctx.providers.Esri.DeLorme
+    )
+    # For continuous colorbars
+    if not CAT and fig is not None:
+        
+        cax = fig.add_axes(ax)
+        fig.colorbar(ax, cax=cax)
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="5%", pad=0.05)
+        #plt.colorbar(ax, cax=cax)
+    
+    return(ax)
+    
+def MAKE_DIR_POLAR_PLOT(d_list, indir):
+    '''Make a polar plot of the acquisition characteristics of the sun and the sensor for a list of .xml files
+    '''
+    
+    #plot_list = []
+    
+    f = plt.figure(figsize=(7,5))
+    ax = plt.subplot(111, projection='polar')
+    ax.set_theta_direction(-1)
+    ax.set_theta_zero_location('N')
+    # And a corresponding grid
+    #ax.grid(which='both')
+    #ax.grid(which='minor', alpha=0.02)
+    ax.grid(which='major', alpha=0.5, linestyle='--')
+
+
+    colors = {'QB02':'tab:pink', 'GE01':'tab:green', 'WV01':'tab:blue', 'WV02':'tab:red', 'WV03':'tab:purple'}
+
+    # title = p['pairname']
+    # title += '\nCenter datetime: %s' % p['cdate']
+    # title += '\nTime offset: %0.2f s' % abs(p['dt'].total_seconds())
+    # title += '\nConv. angle: %0.2f, Int. area: %0.2f km2' % (p['conv_ang'], p['intersection_area'])
+    # title += '\n%s gsd:%0.2f az:%0.1f el:%0.1f off:%0.1f %s %i' % (p['id1_dict']['id'], p['id1_dict']['gsd'], p['id1_dict']['az'], (90-p['id1_dict']['el']), p['id1_dict']['offnadir'], p['id1_dict']['scandir'], p['id1_dict']['tdi'])
+    # title += '\n%s gsd:%0.2f az:%0.1f el:%0.1f off:%0.1f %s %i' % (p['id2_dict']['id'], p['id2_dict']['gsd'], p['id2_dict']['az'], (90-p['id2_dict']['el']), p['id2_dict']['offnadir'], p['id2_dict']['scandir'], p['id2_dict']['tdi'])
+
+    # title = d['id']
+    # title += '\nCenter datetime: %s' % d['date']
+    # title += '\n%s gsd:%0.2f az:%0.1f el:%0.1f off:%0.1f %s %i' % (d['id'], d['gsd'], d['az'], (90-d['el']), d['offnadir'], d['scandir'], d['tdi'])
+
+    title = f'Acquisition geometry of SRLite input'
+    title += f"\n{indir.split('nobackup/')[-1]}"
+
+    # Mark the target at the center of the polar plot
+    ax.plot(0,0,marker='+',color='k')
+    
+    marker_kwargs = {'marker':'o', 'alpha': 0.75}
+
+    for d in d_list:
+        
+        # Make a df b/c its easier to handle during plotting of cmaps
+        #df = pd.DataFrame([d])
+
+        # Map colors to sensor like this?
+        ax.plot(np.radians(d['az']), (90-d['el']), markersize=3, \
+                #label='ID1', \
+                c='k',
+                # To map color to each sensor
+                #c=pd.DataFrame([d])['sensor'].map(colors)[0], \
+                **marker_kwargs   )
+        # or
+        #ax.plot(np.radians(df['az']), (90-df['el']), markersize=3, column=df['sensor'], categorical=True, **marker_kwargs ) #categorical=True, legend=True, cmap='viridis', 
+       
+        # Add the Sun positions
+        ax.plot(np.radians(d['sunaz']), (90-d['sunel']), markersize=10, label='Sun', c='orange', mfc='none', **marker_kwargs )
+        #ax.plot(np.radians(p['id2_dict']['az']), (90-p['id2_dict']['el']), marker='o', label='ID2')
+        #ax.plot([np.radians(p['id1_dict']['az']), np.radians(p['id2_dict']['az'])], [90-p['id1_dict']['el'], 90-p['id2_dict']['el']], \
+        #       color='k', ls=':')
+
+        #ax.legend()
+
+        #This sets elevation range
+        ax.set_rmin(0)
+        ax.set_rmax(90)
+        #ax.patch.set_facecolor('lightgray')
+
+        ax.set_title(title, fontsize=10)
+        
+        #plot_list.append(ax)
+        
+    plt.tight_layout()
+    
+    # TODO: how do i return the ax so that I can place the figure I just made with other figures..
+    return ax
+
+def fix_no_data_value(input_file, output_file, no_data_value=0):
+    # https://gis.stackexchange.com/questions/369064/how-to-convert-0-values-to-nodata-values-with-rasterio
+    with rasterio.open(input_file, "r+") as src:
+        src.nodata = no_data_value
+        with rasterio.open(output_file, 'w',  **src.profile) as dst:
+            for i in range(1, src.count + 1):
+                band = src.read(i)
+                band = np.where(band==no_data_value,no_data_value,band)
+                dst.write(band,i)
+                
+def array_to_polygons(array, transform=None):
+    from rasterio.features import shapes
+    from shapely.geometry import shape
+    import geopandas
+    """
+    https://github.com/brycefrank/pyfor/blob/2d8e5b461b81578ea698f06df6b3736ae9959c41/pyfor/gisexport.py#L50
+    Returns a geopandas dataframe of polygons as deduced from an array.
+
+    :param array: The 2D numpy array to polygonize.
+    :param affine: The affine transformation.
+    :return:
+    """
+    if transform == None:
+        results = [
+            {'properties': {'raster_val': v}, 'geometry': s}
+            for i, (s, v)
+                in enumerate(shapes(array))
+        ]
+    else:
+        results = [
+            {'properties': {'raster_val': v}, 'geometry': s}
+            for i, (s, v)
+            in enumerate(shapes(array, transform=transform))
+        ]
+
+
+    tops_df = geopandas.GeoDataFrame({'geometry': [shape(results[geom]['geometry']) for geom in range(len(results))],
+                                      'raster_val': [results[geom]['properties']['raster_val'] for geom in range(len(results))]})
+
+    return(tops_df)
+
+
+def footprint_cloudmask(r_fn, NEW_NDV, TO_DTYPE = 'uint8', INVERT=True, N_ITER=1, OUTDIR=None):
+    
+    with rasterio.open(r_fn) as dataset:
+
+        ma = dataset.read(1)
+        #print(ma)
+
+        #for i, dtype, nodataval, crs in zip(dataset.indexes, dataset.dtypes, dataset.nodatavals, dataset.crs):
+        #    print(i, dtype, nodataval, crs)
+
+        # Set nodata value to the NEW_NDV    
+        ma = np.where(ma==dataset.nodatavals, NEW_NDV, ma).astype(TO_DTYPE)
+        
+        if INVERT:
+            ma = 1 - ma
+        
+        #ma = np.where(ma==NEW_NDV, dataset.nodatavals, ma).astype(TO_DTYPE)
+        #ma[ma!=dataset.nodatavals] = 1
+        
+        #print(type(ma.dtype))
+
+        # Binary dilation by n pixels
+        ma = ndimage.binary_dilation(ma, iterations=N_ITER).astype(ma.dtype)
+        #ma = ndimage.binary_erosion(ma, iterations=N_ITER).astype(ma.dtype)
+
+        gdf = array_to_polygons(ma, transform = dataset.transform)
+        gdf['file'] = os.path.basename(r_fn)
+        gdf = gdf[gdf.raster_val != NEW_NDV]
+        #print(ma)
+        
+        print(f'Footprinted cloudmask: {os.path.basename(r_fn)}')
+        gdf.set_crs(crs=dataset.crs, inplace=True)
+        
+        if OUTDIR is not None:
+            gdf.to_file(os.path.join(OUTDIR, os.path.basename(r_fn).replace('.tif','.gpkg') ), driver='GPKG')
+            
+        return gdf
+    
+def get_attributes_from_filename(footprint_gdf, image_type: str, file_split_str: str, filename = None, file_col = 'file', DROP_FILE_DUPLICATES=True):
+    
+    if file_col not in footprint_gdf.columns:
+        footprint_gdf[file_col] = filename
+    
+    # Customize attributes
+    footprint_gdf['type'] = image_type
+    footprint_gdf['footprint_name'] = footprint_gdf[file_col].str.split(file_split_str, expand=True)[0]
+    footprint_gdf['catid'] = footprint_gdf['footprint_name'].str.split('_', expand=True)[3]
+    footprint_gdf['sensor'] = footprint_gdf[file_col].str.split('_', expand=True)[0]
+    footprint_gdf['year'] = footprint_gdf[file_col].str.split('_', expand=True)[1].str[0:4].astype(int)
+    footprint_gdf['month'] = footprint_gdf[file_col].str.split('_', expand=True)[1].str[4:6].astype(int)
+    footprint_gdf['date'] = pd.to_datetime(footprint_gdf[file_col].str.split('_', expand=True)[1] , format="%Y%m%d")
+
+    if DROP_FILE_DUPLICATES:
+        # Drop dups from 'repair'
+        footprint_gdf.drop_duplicates(subset=file_col, keep='last', inplace=True)
+
+    if False:
+        print( f"# {image_type} obs. : {footprint_gdf.shape[0]}")
+    
+    return footprint_gdf
