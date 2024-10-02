@@ -25,6 +25,42 @@ def get_vhr_xml_band_attribute(xml_fn, BAND_NAME, ATTRIB_NAME):
     xroot = xtree.getroot()
     return(xroot.find('IMD').find(BAND_NAME).find(ATTRIB_NAME).text)
 
+def compute_unit_vector(elevation, azimuth):
+    # Convert to radians
+    elevation_rad = np.deg2rad(elevation)
+    azimuth_rad = np.deg2rad(azimuth)
+    
+    # Compute x, y, z using spherical to Cartesian conversion, given the definitions of elevation and azimuth
+    x = np.cos(elevation_rad) * np.sin(azimuth_rad)
+    y = np.cos(elevation_rad) * np.cos(azimuth_rad)
+    z = np.sin(elevation_rad)
+    
+    return np.array([x, y, z])
+
+def compute_angular_divergence(sun_vector, view_vector):
+    dot_product = np.dot(sun_vector, view_vector)
+    angle = np.arccos(dot_product)
+    
+    return np.rad2deg(angle)  # convert to degrees
+
+def get_angular_divergence_col(df, cols_rename_dict: dict = {'sunel': 'sun_elevation', 'sunaz': 'sun_azimuth', 'el': 'view_elevation', 'az': 'view_azimuth'}):
+    
+    df.rename(columns=cols_rename_dict, inplace=True)
+    
+    # Input angles for sun and view directions
+    sun_elevation = 30  # elevation angle for sun
+    sun_azimuth = 60  # azimuth angle for sun
+
+    view_elevation = 45  # elevation angle for view
+    view_azimuth = 90  # azimuth angle for view
+
+    sun_vector = compute_unit_vector(sun_elevation, sun_azimuth)
+    view_vector = compute_unit_vector(view_elevation, view_azimuth)
+
+    divergence = compute_angular_divergence(sun_vector, view_vector)
+
+    print(f'The angular divergence between the sun and the view direction is {divergence} degrees.')
+
 def make_vhr_xml_dataframe(xml_fn: str, 
                   BAND_FOR_BOUNDS = 'BAND_N',
                   CORNER_COLS_LIST = ['ULLON','ULLAT','ULHAE','URLON','URLAT','URHAE','LLLON','LLLAT','LLHAE','LRLON','LRLAT','LRHAE'],
@@ -63,13 +99,13 @@ def make_vhr_xml_dataframe(xml_fn: str,
     
     return(pd.concat([df2, df1], axis=1))
 
-def MAKE_DIR_POLAR_PLOT(d_list, indir):
+def MAKE_DIR_POLAR_PLOT(d_list, indir, title = None, FIGSIZE=(7,5)):
     '''Make a polar plot of the acquisition characteristics of the sun and the sensor for a list of .xml files
     '''
-    
+    from matplotlib  import cm
     #plot_list = []
     
-    f = plt.figure(figsize=(7,5))
+    f = plt.figure(figsize=FIGSIZE)
     ax = plt.subplot(111, projection='polar')
     ax.set_theta_direction(-1)
     ax.set_theta_zero_location('N')
@@ -92,13 +128,14 @@ def MAKE_DIR_POLAR_PLOT(d_list, indir):
     # title += '\nCenter datetime: %s' % d['date']
     # title += '\n%s gsd:%0.2f az:%0.1f el:%0.1f off:%0.1f %s %i' % (d['id'], d['gsd'], d['az'], (90-d['el']), d['offnadir'], d['scandir'], d['tdi'])
 
-    title = f'Acquisition geometry of SRLite input'
-    if indir is not None:
-        #title += f"\n{indir.split('nobackup/')[-1]}"
-        title += f"\n{indir}"
+    if title is None:
+        title = f'Acquisition geometry of SRLite input'
+        if indir is not None:
+            #title += f"\n{indir.split('nobackup/')[-1]}"
+            title += f"\n{indir}"
 
     # Mark the target at the center of the polar plot
-    ax.plot(0,0,marker='+',color='red')
+    ax.plot(0,0,marker='+', markersize=10, color='red')
     
     marker_kwargs = {'marker':'o', 'alpha': 0.75}
 
@@ -111,14 +148,25 @@ def MAKE_DIR_POLAR_PLOT(d_list, indir):
         ax.plot(np.radians(d['az']), (90-d['el']), markersize=3, \
                 #label='ID1', \
                 c='k',
+                #c=d['ang_div'], cmap = cm.jet,
                 # To map color to each sensor
                 #c=pd.DataFrame([d])['year'].map(colors)[0], \
-                **marker_kwargs   )
-        # or
-        #ax.plot(np.radians(df['az']), (90-df['el']), markersize=3, column=df['sensor'], categorical=True, **marker_kwargs ) #categorical=True, legend=True, cmap='viridis', 
+                # To map color to values??
+                #c=pd.DataFrame([d])['ang_div'].map(colors)[0], \
+                **marker_kwargs 
+               )
+        if False:
+            # or
+            ax.plot(np.radians(d['az']), (90-d['el']), markersize=3, 
+                    column=d['ang_div'], 
+                    **marker_kwargs , 
+                    categorical=False, 
+                    legend=True, cmap='viridis') 
        
         # Add the Sun positions
-        ax.plot(np.radians(d['sunaz']), (90-d['sunel']), markersize=10, label='Sun', c='orange', mfc='none', **marker_kwargs )
+        ax.plot(np.radians(d['sunaz']), (90-d['sunel']), markersize=10, label='Sun', c='orange', 
+                mfc='none', 
+                **marker_kwargs )
         #ax.plot(np.radians(p['id2_dict']['az']), (90-p['id2_dict']['el']), marker='o', label='ID2')
         #ax.plot([np.radians(p['id1_dict']['az']), np.radians(p['id2_dict']['az'])], [90-p['id1_dict']['el'], 90-p['id2_dict']['el']], \
         #       color='k', ls=':')
@@ -133,7 +181,14 @@ def MAKE_DIR_POLAR_PLOT(d_list, indir):
         ax.set_title(title, fontsize=10)
         
         #plot_list.append(ax)
-        
+    
+    # adding legend
+    sun_marks = plt.scatter([],[],  facecolors='none', edgecolors='orange', label='Sun', s=75)
+    sensor_marks = plt.scatter([],[],  color='k', label='Sensor')
+    target_mark = plt.scatter([],[], marker='+', color='red', label='target')
+
+    plt.legend(handles=[target_mark, sensor_marks, sun_marks])
+    
     plt.tight_layout()
     
     # TODO: how do i return the ax so that I can place the figure I just made with other figures..
