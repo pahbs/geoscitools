@@ -4,6 +4,9 @@ import h5py
 import rasterio as rio 
 from rasterio.crs import CRS
 
+import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+
 from pathlib import Path
 
 from rasterio.transform import from_origin
@@ -18,7 +21,7 @@ list_imagery = ['Aerosol_Optical_Depth','Aspect','Cast_Shadow',
                 'Dark_Dense_Vegetation_Classification','Data_Selection_Index',
                 'Haze_Cloud_Water_Map','Illumination_Factor','Path_Length',
                 'Sky_View_Factor','Slope','Smooth_Surface_Elevation','Visibility_Index_Map',
-                'Water_Vapor_Column','Weather_Quality_Indicator']
+                'Water_Vapor_Column','Weather_Quality_Indicator','Weather_Quality_Indicator_2','Weather_Quality_Indicator_3','Ang_diff_hotspot']
 
 def stack_hyper_imagery(fn, SITE, subdataset='Metadata/Ancillary_Imagery', 
                             outdir=None, 
@@ -140,7 +143,7 @@ def plot_ancillary_stack(stack, bandnames_list):
 
     cmap_list = ['magma', 'bone', 'tab20',  'Greens', 'afmhot', 'winter',
                  'copper', 'summer', 'autumn', 'bone', 'bone', 'Wistia',
-                 'hot', 'magma', 'inferno', 'plasma'
+                 'hot', 'magma', 'inferno', 'plasma', 'cividis'
                 ]
 
     f, axa = plt.subplots(nrows=4, ncols=5, sharex=True, sharey=True, dpi=150, figsize=(24,16)) 
