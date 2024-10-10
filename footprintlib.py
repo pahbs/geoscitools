@@ -384,6 +384,9 @@ def raster_footprint(r_fn, DO_DATAMASK=True, GET_ONLY_DATASETMASK=True, R_READ_M
             
             #print(footprints_gdf.crs.axis_info[0].unit_name)
             #print(dataset.crs)
+            
+            if not isinstance(r_fn, str):
+                r_fn = str(r_fn).split(',')[1].replace('>','').replace(' ','')
 
             footprints_gdf['path'], footprints_gdf['file'] = os.path.split(r_fn)
             
